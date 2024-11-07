@@ -2,6 +2,7 @@ import socket
 import threading
 import sys
 from random import *
+import os
 
 
 class Peer2peer:
@@ -92,46 +93,157 @@ class Peer2peer:
                 self.connected = False
                 continue
 
-
-
-
     def send_message(self):
         while self.running and self.connected:
-            message = input("Enter message ('quit' to end connection): ")
-            if message.lower() == 'quit':
+            choice = input("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ").strip().lower()
+
+            if choice == 'm':
+                message = input("Enter message ('Quit' to end connection): ")
+                if message.lower() == 'quit':
+                    self.running = False
+                    self.sequence_number_int += 1
+                    packet = self.create_new_bit_field(self.sequence_number_int, 0, 4, 7, 0)
+                    self.sock.sendto(packet, (self.target_ip, self.target_port))
+                    break
+                else:
+                    print("Message sent.")
+
+                self.sequence_number_int += 1
+                packet = self.create_new_bit_field(self.sequence_number_int, 0, 4, 2, 0)
+                self.sock.sendto(packet + message.encode('utf-8'), (self.target_ip, self.target_port))
+
+            elif choice == 'f':
+                file_path = input("Enter the file path: ").strip()
+                self.send_file(file_path)
+
+            elif choice == 'quit':
                 self.running = False
                 self.sequence_number_int += 1
                 packet = self.create_new_bit_field(self.sequence_number_int, 0, 4, 7, 0)
                 self.sock.sendto(packet, (self.target_ip, self.target_port))
                 break
 
-            self.sequence_number_int += 1
-            packet = self.create_new_bit_field(self.sequence_number_int, 0, 4, 2, 0)
-
-            self.sock.sendto(packet + message.encode('utf-8'), (self.target_ip, self.target_port))
-
+            else:
+                print("Invalid input. Please enter 'M', 'F', or 'Quit'.")
 
     def receive_message(self):
         while self.running and self.connected:
             try:
                 data, addr = self.sock.recvfrom(self.msgsize)
-                bit_message = ''.join(f'{byte:08b}' for byte in data)
+                bit_message = ''.join(f'{byte:08b}' for byte in data[:13])  # Extract header bits
 
-                msg_type_bits = int(bit_message[85:88])
+                # Parse message type and flags from header
+                msg_type_bits = int(bit_message[85:88], 2)
+
                 if msg_type_bits == 111:
+                    # End of connection
                     self.connected = False
                     break
 
-                data = data[13:]
+                if msg_type_bits == 4:  # File message type
+                    # Call receive_file to handle the file transfer
+                    self.receive_file()
+                else:
+                    # Assume it's a text message if msg_type is not file
+                    data = data[13:]  # Strip header bits
+                    received_text = data.decode('utf-8')
 
-                # Move the cursor to the beginning of the line before printing the received message
-                sys.stdout.write(f"\rReceived from {addr}: {data.decode('utf-8')}\n")
-                sys.stdout.flush()
-                # Show the input prompt again on the next line
-                sys.stdout.write("Enter message ('quit' to end connection): ")
-                sys.stdout.flush()
+                    # Move cursor to the beginning of the line, clear it, then print the received message
+                    sys.stdout.write(f"\r{' ' * 80}\r")  # Clear the current line
+                    sys.stdout.write(f"Received from {addr}: {received_text}\n")
+                    sys.stdout.flush()
+
+                    # Show the input prompt again on the next line
+                    sys.stdout.write("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ")
+                    sys.stdout.flush()
             except socket.error:
                 pass
+
+    def send_file(self, file_path):
+        """Send a file in fragments if needed."""
+        try:
+            with open(file_path, 'rb') as f:
+                fragment_id = 0
+                while True:
+                    # Read a fragment of the file
+                    file_data = f.read(self.msgsize - 13)  # Reserve 13 bytes for the header
+
+                    if not file_data:
+                        # No more data to read, file is fully sent
+                        break
+
+                    # Set flags based on whether this is the last fragment
+                    if len(file_data) < (self.msgsize - 13):
+                        flags = 4  # Last fragment
+                    else:
+                        flags = 2  # More fragments
+
+                    # Create the packet with headers and file data
+                    packet = self.create_new_bit_field(
+                        sequence_number=self.sequence_number_int,
+                        acknowledgment_number=0,
+                        flags=flags,
+                        msg_type=4,  # File message type
+                        checksum=0
+                    )
+                    packet += file_data
+
+                    # Send the fragment
+                    self.sock.sendto(packet, (self.target_ip, self.target_port))
+
+                    # Log the fragment being sent
+                    print(f"Sent fragment {fragment_id} with sequence number {self.sequence_number_int}")
+
+                    fragment_id += 1
+                    self.sequence_number_int += 1  # Increment sequence number for next fragment
+
+            print("File sent successfully.")
+        except FileNotFoundError:
+            print("File not found. Please check the file path and try again.")
+        except Exception as e:
+            print(f"An error occurred while sending the file: {e}")
+
+    def receive_file(self):
+        """Receive a file in fragments and reconstruct it."""
+        fragments = {}
+        while self.running and self.connected:
+            try:
+                data, addr = self.sock.recvfrom(self.msgsize)
+                bit_message = ''.join(f'{byte:08b}' for byte in data[:13])  # Extract header bits
+
+                # Parse the header bits for file data
+                flags = int(bit_message[69:74], 2)
+                fragment_id = int(bit_message[64:80], 2)
+
+                # Save fragment data (after header) in the correct order
+                fragments[fragment_id] = data[13:]
+
+                # If this is the last fragment (no more fragments flag), break out of loop
+                if flags & 2 == 0:
+                    break
+
+            except socket.error:
+                pass
+
+        # Reconstruct the file from fragments
+        file_data = b''.join([fragments[i] for i in sorted(fragments)])
+
+        # Define the downloads folder path and file name
+        download_path = "C:/Users/001ba/Downloads"  # Using expanduser to resolve paths
+        file_path = os.path.join(download_path, "received_file")
+
+        # Save the reconstructed file data
+        try:
+            with open(file_path, 'wb') as f:
+                f.write(file_data)
+            print(f"File received and saved as '{file_path}'.")
+        except FileNotFoundError:
+            print("Downloads folder path does not exist.")
+        except PermissionError:
+            print("Permission denied: unable to save the file in the specified directory.")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+
 
     def start_communication(self):
         # Initiate the handshake
@@ -175,9 +287,9 @@ class Peer2peer:
 
 
 if __name__ == "__main__":
-    local_ip = '147.175.160.79'
+    local_ip = '172.20.10.4'
     local_port = input("local port:")  # 55554 for example
-    target_ip = '147.175.160.79'
+    target_ip = '172.20.10.4'
     target_port = input("target port:")  # 55555 for exapmle
 
     node = Peer2peer(local_ip, int(local_port), target_ip, int(target_port), 1024)
