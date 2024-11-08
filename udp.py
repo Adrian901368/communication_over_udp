@@ -32,13 +32,13 @@ class Peer2peer:
         return int(big_bit_sequence, 2).to_bytes(len(big_bit_sequence) // 8, byteorder='big')
 
 
-    def create_new_bit_field(self, sequence_number, acknowledgment_number, flags, msg_type, checksum):
+    def create_new_bit_field(self, sequence_number, acknowledgment_number, fragment_id, flags, msg_type, checksum):
 
 
         sequence_number_bits = f'{sequence_number:032b}'  # 32-bit sequence number
         acknowledgment_number_bits = f'{acknowledgment_number:032b}'  # 32-bit acknowledgment number
-        fragment_id_bits = f'{randint(0,2**16):016b}'  # 16-bit fragment ID
-        flags_bits = f'{flags:05b}'  # 5-bit flags (for example, SYN flag)
+        fragment_id_bits = f'{fragment_id:016b}'  # 16-bit fragment ID
+        flags_bits = f'{flags:05b}'  # 5-bit flags (for example, SYN flag)F
         msg_type_bits = f'{msg_type:03b}'  # 3-bit message type
         checksum_bits = f'{checksum:016b}'  # 16-bit checksum (set to zero for now)
 
@@ -49,7 +49,7 @@ class Peer2peer:
         random_value = randint(0, 10000)  # Generate random sequence numbe
 
         # Create bit fields
-        bit_message = self.create_new_bit_field(random_value, 0,16,4, 0 )  # 16-bit checksum (set to zero for now)
+        bit_message = self.create_new_bit_field(random_value, 0,0,16,4, 0 )  # 16-bit checksum (set to zero for now)
 
         # Merge all bits into a single message
 
@@ -73,7 +73,7 @@ class Peer2peer:
                     print(f"Received INIT from {addr}. \nSending INIT-ACK...")
                     self.sequence_number_int = randint(0, 10000)
                     acknowledgment_number_int = int(bit_message[0:32], 2) + 1
-                    data = self.create_new_bit_field(self.sequence_number_int,acknowledgment_number_int, 24, 4, 0)
+                    data = self.create_new_bit_field(self.sequence_number_int,acknowledgment_number_int,0, 24, 4, 0)
                     self.sock.sendto(data, addr)
 
 
@@ -82,7 +82,7 @@ class Peer2peer:
                     print(f"Received INIT-ACK from {addr}. \nSending ACK to complete handshake... ")
                     self.sequence_number_int = randint(0, 10000)
                     acknowledgment_number_int = int(bit_message[0:32], 2) + 1
-                    data = self.create_new_bit_field(self.sequence_number_int,acknowledgment_number_int, 8, 4, 0)
+                    data = self.create_new_bit_field(self.sequence_number_int,acknowledgment_number_int,0, 8, 4, 0)
                     self.sock.sendto(data, addr)
                     self.connected = True
 
@@ -102,14 +102,14 @@ class Peer2peer:
                 if message.lower() == 'quit':
                     self.running = False
                     self.sequence_number_int += 1
-                    packet = self.create_new_bit_field(self.sequence_number_int, 0, 4, 7, 0)
+                    packet = self.create_new_bit_field(self.sequence_number_int, 0,0, 4, 7, 0)
                     self.sock.sendto(packet, (self.target_ip, self.target_port))
                     break
                 else:
                     print("Message sent.")
 
                 self.sequence_number_int += 1
-                packet = self.create_new_bit_field(self.sequence_number_int, 0, 4, 2, 0)
+                packet = self.create_new_bit_field(self.sequence_number_int, 0,0, 4, 2, 0)
                 self.sock.sendto(packet + message.encode('utf-8'), (self.target_ip, self.target_port))
 
             elif choice == 'f':
@@ -119,7 +119,7 @@ class Peer2peer:
             elif choice == 'quit':
                 self.running = False
                 self.sequence_number_int += 1
-                packet = self.create_new_bit_field(self.sequence_number_int, 0, 4, 7, 0)
+                packet = self.create_new_bit_field(self.sequence_number_int, 0, 0,4, 7, 0)
                 self.sock.sendto(packet, (self.target_ip, self.target_port))
                 break
 
@@ -142,7 +142,7 @@ class Peer2peer:
 
                 if msg_type_bits == 4:  # File message type
                     # Call receive_file to handle the file transfer
-                    self.receive_file()
+                    self.receive_file(data)
                 else:
                     # Assume it's a text message if msg_type is not file
                     data = data[13:]  # Strip header bits
@@ -163,7 +163,7 @@ class Peer2peer:
         """Send a file in fragments if needed."""
         try:
             with open(file_path, 'rb') as f:
-                fragment_id = 0
+                fragment_id = 1
                 while True:
                     # Read a fragment of the file
                     file_data = f.read(self.msgsize - 13)  # Reserve 13 bytes for the header
@@ -182,6 +182,7 @@ class Peer2peer:
                     packet = self.create_new_bit_field(
                         sequence_number=self.sequence_number_int,
                         acknowledgment_number=0,
+                        fragment_id=fragment_id,
                         flags=flags,
                         msg_type=4,  # File message type
                         checksum=0
@@ -203,25 +204,28 @@ class Peer2peer:
         except Exception as e:
             print(f"An error occurred while sending the file: {e}")
 
-    def receive_file(self):
+    def receive_file(self, data):
         """Receive a file in fragments and reconstruct it."""
         fragments = {}
+        fragment_id = 0
         while self.running and self.connected:
             try:
-                data, addr = self.sock.recvfrom(self.msgsize)
+
+
+
                 bit_message = ''.join(f'{byte:08b}' for byte in data[:13])  # Extract header bits
 
                 # Parse the header bits for file data
-                flags = int(bit_message[69:74], 2)
+                flags = int(bit_message[80:85], 2)
                 fragment_id = int(bit_message[64:80], 2)
 
                 # Save fragment data (after header) in the correct order
                 fragments[fragment_id] = data[13:]
-
+                print(f"fragment number {fragment_id} -- flags {flags}")
                 # If this is the last fragment (no more fragments flag), break out of loop
-                if flags & 2 == 0:
+                if flags == 4:
                     break
-
+                data, addr = self.sock.recvfrom(self.msgsize)
             except socket.error:
                 pass
 
@@ -236,13 +240,24 @@ class Peer2peer:
         try:
             with open(file_path, 'wb') as f:
                 f.write(file_data)
-            print(f"File received and saved as '{file_path}'.")
+            print(f"File received and saved as '{file_path}' ")
+            sys.stdout.write("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ")
+            sys.stdout.flush()
+
         except FileNotFoundError:
             print("Downloads folder path does not exist.")
+            sys.stdout.write("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ")
+            sys.stdout.flush()
+
         except PermissionError:
             print("Permission denied: unable to save the file in the specified directory.")
+            sys.stdout.write("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ")
+            sys.stdout.flush()
+
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
+            sys.stdout.write("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ")
+            sys.stdout.flush()
 
 
     def start_communication(self):
@@ -287,12 +302,11 @@ class Peer2peer:
 
 
 if __name__ == "__main__":
-    local_ip = '172.20.10.4'
+    local_ip =  '10.10.18.243'
     local_port = input("local port:")  # 55554 for example
-    target_ip = '172.20.10.4'
+    target_ip =  '10.10.18.243'
     target_port = input("target port:")  # 55555 for exapmle
 
     node = Peer2peer(local_ip, int(local_port), target_ip, int(target_port), 1024)
     while node.running:
         node.start_communication()
-
