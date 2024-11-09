@@ -3,7 +3,12 @@ import threading
 import sys
 from random import *
 import os
+import time
 
+
+HEARTBEAT_INTERVAL = 5         # interval odosielania heartbeat správ v sekundách
+HEARTBEAT_TIMEOUT = 6        # timeout na prijatie odpovede v sekundách
+MAX_MISSED_HEARTBEATS = 3
 
 class Peer2peer:
     def __init__(self, client_ip, client_port, target_ip, target_port, msgsize):
@@ -17,6 +22,10 @@ class Peer2peer:
         self.running = True
         self.connected = False
         self.sequence_number_int = 0
+        self.missed_heartbeats = 0
+        self.keep_alive_running = True
+        self.last_heartbeat_time = None
+        self.last_received_msg_time = time.time()
 
     def merge_bits(self, sequence_number, acknowledgment_number, fragment_id, flags, msg_type, checksum):
         #Merge individual bit fields into a single bit sequence."""
@@ -84,16 +93,70 @@ class Peer2peer:
                     acknowledgment_number_int = int(bit_message[0:32], 2) + 1
                     data = self.create_new_bit_field(self.sequence_number_int,acknowledgment_number_int,0, 8, 4, 0)
                     self.sock.sendto(data, addr)
+                    self.last_received_msg_time = time.time()
                     self.connected = True
 
                 elif syn_flag == '0' and ack_flag == '1':
                     print(f"Received ACK from {addr}.\n*** PRESS ENTER TO CONTINUE ***")
+                    self.last_received_msg_time = time.time()
                     self.connected = True
             except Exception as e:
                 self.connected = False
                 continue
 
+    def send_keep_alive(self):
+        while self.keep_alive_running:
+            if not self.connected or time.time() - self.last_received_msg_time < HEARTBEAT_TIMEOUT:
+                time.sleep(1)
+                continue
+
+            if self.missed_heartbeats > 0:
+
+                print(f"Missed heartbeat message({self.missed_heartbeats})")
+
+            # Kontrola, či spojenie nie je ukončené
+            if self.missed_heartbeats >= MAX_MISSED_HEARTBEATS:
+                print("Connection lost.\nCLOSING...")
+                self.keep_alive_running = False
+                self.connected = False
+                break
+
+            # Odoslanie heartbeat správy
+            packet = self.create_new_bit_field(self.sequence_number_int, 0, 0, 1, 2, 0)
+            self.sock.sendto(packet, (self.target_ip, self.target_port))
+            print("Sent heartbeat message")
+            self.last_received_msg_time = time.time()
+            sys.stdout.write("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ")
+            sys.stdout.flush()
+
+            self.missed_heartbeats += 1
+            # Ak nie sú prijaté odpovede, zväčši počítadlo
+
+
+      # Send an ACK for the heartbeat
+
+    def receive_keep_alive(self, ack_flag):
+        """Listen for incoming heartbeat messages and respond."""
+        self.missed_heartbeats = 0
+        if ack_flag:
+
+            return
+
+        # Reset missed heartbeats counter when a heartbeat is received
+        print("Received heartbeat message")
+        sys.stdout.write("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ")
+        sys.stdout.flush()
+
+            # Optionally, send an acknowledgment back
+        packet = self.create_new_bit_field(self.sequence_number_int, 0, 0, 9, 2, 0)
+        self.sock.sendto(packet, (self.target_ip, self.target_port))
+            # Reset the last heartbeat time
+        self.last_heartbeat_time = time.time()
+
+
+
     def send_message(self):
+        last_action_time = time.time()
         while self.running and self.connected:
             choice = input("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ").strip().lower()
 
@@ -130,6 +193,7 @@ class Peer2peer:
         while self.running and self.connected:
             try:
                 data, addr = self.sock.recvfrom(self.msgsize)
+                self.last_received_msg_time = time.time()
                 bit_message = ''.join(f'{byte:08b}' for byte in data[:13])  # Extract header bits
 
                 # Parse message type and flags from header
@@ -144,6 +208,13 @@ class Peer2peer:
                     # Call receive_file to handle the file transfer
                     self.receive_file(data)
                 else:
+                    keep_alive_flag = int(bit_message[84], 2)
+                    if keep_alive_flag == 1:
+                        ack_flag = int(bit_message[81], 2)
+                        self.receive_keep_alive(ack_flag)
+                        continue
+
+
                     # Assume it's a text message if msg_type is not file
                     data = data[13:]  # Strip header bits
                     received_text = data.decode('utf-8')
@@ -244,6 +315,9 @@ class Peer2peer:
             sys.stdout.write("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ")
             sys.stdout.flush()
 
+        except socket.timeout:
+            print("Timeout occurred while receiving file.")
+
         except FileNotFoundError:
             print("Downloads folder path does not exist.")
             sys.stdout.write("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ")
@@ -287,6 +361,10 @@ class Peer2peer:
         send_thread = threading.Thread(target=self.send_message)
         send_thread.daemon = True
         send_thread.start()
+
+        keep_alive_send_thread = threading.Thread(target=self.send_keep_alive)
+        keep_alive_send_thread.daemon = True
+        keep_alive_send_thread.start()
 
         try:
 
