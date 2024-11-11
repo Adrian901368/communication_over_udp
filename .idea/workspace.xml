@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="bf2e1fbe-0ce0-4e50-9383-99a73ccb9cfd" name="Changes" comment="Files ale sending succesfully by all fragments">
+    <list default="true" id="bf2e1fbe-0ce0-4e50-9383-99a73ccb9cfd" name="Changes" comment="Files ale sending succesfully by all fragments + keep alive">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/udp.py" beforeDir="false" afterPath="$PROJECT_DIR$/udp.py" afterDir="false" />
     </list>
@@ -38,6 +38,9 @@
   <component name="HighlightingSettingsPerFile">
     <setting file="file://$PROJECT_DIR$/udp.py" root0="FORCE_HIGHLIGHTING" />
   </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="ProjectErrors" />
+  </component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 1
 }</component>
@@ -47,16 +50,17 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python.ZD1.executor&quot;: &quot;Run&quot;,
-    &quot;Python.timo.executor&quot;: &quot;Run&quot;,
-    &quot;Python.udp.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/001ba/OneDrive/Desktop/folder/UI/UI_Z2B_barnak_Clustering&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.ZD1.executor": "Run",
+    "Python.timo.executor": "Run",
+    "Python.udp.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "git-widget-placeholder": "master",
+    "last_opened_file_path": "C:/Users/001ba/OneDrive/Desktop/folder/UI/UI_Z2B_barnak_Clustering",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
   }
-}</component>
+}]]></component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -121,14 +125,31 @@
       <option name="project" value="LOCAL" />
       <updated>1731082395790</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="Files ale sending succesfully by all fragments + keep alive">
+      <option name="closed" value="true" />
+      <created>1731172643941</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1731172643941</updated>
+    </task>
+    <task id="LOCAL-00008" summary="Files ale sending succesfully by all fragments + keep alive">
+      <option name="closed" value="true" />
+      <created>1731172651551</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1731172651551</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Handshake + communication" />
     <MESSAGE value="fragmenty sa poslu ale nie vsetky" />
     <MESSAGE value="Files ale sending succesfully by all fragments" />
-    <option name="LAST_COMMIT_MESSAGE" value="Files ale sending succesfully by all fragments" />
+    <MESSAGE value="Files ale sending succesfully by all fragments + keep alive" />
+    <option name="LAST_COMMIT_MESSAGE" value="Files ale sending succesfully by all fragments + keep alive" />
   </component>
   <component name="XDebuggerManager">
     <watches-manager>

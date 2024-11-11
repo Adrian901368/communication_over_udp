@@ -7,7 +7,7 @@ import time
 
 
 HEARTBEAT_INTERVAL = 5         # interval odosielania heartbeat správ v sekundách
-HEARTBEAT_TIMEOUT = 6        # timeout na prijatie odpovede v sekundách
+HEARTBEAT_TIMEOUT = 10        # timeout na prijatie odpovede v sekundách
 MAX_MISSED_HEARTBEATS = 3
 
 class Peer2peer:
@@ -26,6 +26,7 @@ class Peer2peer:
         self.keep_alive_running = True
         self.last_heartbeat_time = None
         self.last_received_msg_time = time.time()
+        self.ack_nack_packet = None
 
     def merge_bits(self, sequence_number, acknowledgment_number, fragment_id, flags, msg_type, checksum):
         #Merge individual bit fields into a single bit sequence."""
@@ -153,6 +154,42 @@ class Peer2peer:
             # Reset the last heartbeat time
         self.last_heartbeat_time = time.time()
 
+    def send_ack(self, addr):
+        # Send an ACK message
+        flags = 8
+        ack_packet = self.create_new_bit_field(self.sequence_number_int, 0, 0, flags, 2, 0)
+        self.sock.sendto(ack_packet, addr)
+        print('ACK sent')
+
+
+    def send_nack(self, addr):
+        # Send a NACK message (ack_flag set to 0)
+        flags = 0  # No ACK flag
+        nack_packet = self.create_new_bit_field(self.sequence_number_int, 0, 0, flags, 2, 0)
+        self.sock.sendto(nack_packet, addr)
+        print('NACK sent')
+
+
+    def wait_for_ack_nack(self):
+        """Wait for an ACK or NACK response and return the received flags."""
+        while True:
+
+            if self.ack_nack_packet is not None:
+                break
+
+
+        bit_message = self.ack_nack_packet
+        self.ack_nack_packet = None
+        try:
+
+            # Extract the flags from the response
+              # Extract header bits
+            flags_bits = bit_message[80:85]
+            flags = int(flags_bits, 2)
+            return flags
+        except Exception as e:
+            print(f"Error receiving ACK/NACK: {e}")
+            return None
 
 
     def send_message(self):
@@ -206,8 +243,20 @@ class Peer2peer:
 
                 if msg_type_bits == 4:  # File message type
                     # Call receive_file to handle the file transfer
-                    self.receive_file(data)
+                    self.receive_file(data, addr)
+                        # Send ACK if fragment received successfully
+                    #self.send_ack(addr)
+                    #else:
+                        # Send NACK if fragment is invalid or timed out
+                     #   self.send_nack(addr)
+
                 else:
+                    flags = int(bit_message[80:85], 2)
+
+                    if flags in [0, 8]:
+                        self.ack_nack_packet = bit_message
+                        continue
+
                     keep_alive_flag = int(bit_message[84], 2)
                     if keep_alive_flag == 1:
                         ack_flag = int(bit_message[81], 2)
@@ -233,7 +282,9 @@ class Peer2peer:
     def send_file(self, file_path):
         """Send a file in fragments if needed."""
         try:
+
             with open(file_path, 'rb') as f:
+
                 fragment_id = 1
                 while True:
                     # Read a fragment of the file
@@ -266,16 +317,40 @@ class Peer2peer:
                     # Log the fragment being sent
                     print(f"Sent fragment {fragment_id} with sequence number {self.sequence_number_int}")
 
+                    retry_count = 0
+                    while retry_count < 3:
+                        flags = self.wait_for_ack_nack()
+
+                        # Handle ACK/NACK based on received flags
+                        if flags == 8:
+                            print(f"ACK received for fragment {fragment_id}")
+                            break  # Break the retry loop if ACK is received
+                        elif flags == 0:
+                            print(f"NACK received for fragment {fragment_id}, retransmitting...")
+                            self.sock.sendto(packet, (self.target_ip, self.target_port))  # Retransmit the fragment
+                            retry_count += 1  # Increment retry counter
+                        else:
+                            print(f"Unexpected flags {flags} received, ignoring.")
+                            break  # Exit retry loop for unexpected flags
+
+                    # If retry count reaches 3, mark the fragment as lost
+                    if retry_count == 3:
+                        print(f"Fragment {fragment_id} lost after 3 attempts.")
+                        # Optionally, handle the lost fragment (log, skip, etc.)
+
                     fragment_id += 1
-                    self.sequence_number_int += 1  # Increment sequence number for next fragment
+                    self.sequence_number_int += 1
 
             print("File sent successfully.")
+
+
         except FileNotFoundError:
             print("File not found. Please check the file path and try again.")
         except Exception as e:
             print(f"An error occurred while sending the file: {e}")
 
-    def receive_file(self, data):
+    def receive_file(self, data, addr):
+        #data, addr = self.sock.recvfrom(self.msgsize)
         """Receive a file in fragments and reconstruct it."""
         fragments = {}
         fragment_id = 0
@@ -288,17 +363,29 @@ class Peer2peer:
 
                 # Parse the header bits for file data
                 flags = int(bit_message[80:85], 2)
+
                 fragment_id = int(bit_message[64:80], 2)
 
                 # Save fragment data (after header) in the correct order
                 fragments[fragment_id] = data[13:]
                 print(f"fragment number {fragment_id} -- flags {flags}")
+                self.send_ack(addr)
                 # If this is the last fragment (no more fragments flag), break out of loop
-                if flags == 4:
+                if flags == 4 :
                     break
                 data, addr = self.sock.recvfrom(self.msgsize)
-            except socket.error:
-                pass
+                self.last_received_msg_time = time.time()
+
+
+            except socket.timeout:
+                print("Timeout occurred while waiting for fragment.")
+                # Send NACK if there was a timeout waiting for the fragment
+                self.send_nack(addr)
+
+            except Exception as e:
+                print(f"Error receiving fragment {fragment_id}: {e}")
+                # Send NACK if there was an error with the fragment
+                self.send_nack(addr)
 
         # Reconstruct the file from fragments
         file_data = b''.join([fragments[i] for i in sorted(fragments)])
