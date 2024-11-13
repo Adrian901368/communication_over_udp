@@ -4,12 +4,13 @@ import sys
 from random import *
 import os
 import time
-
+import crcmod
 
 HEARTBEAT_INTERVAL = 5         # interval odosielania heartbeat správ v sekundách
 HEARTBEAT_TIMEOUT = 10        # timeout na prijatie odpovede v sekundách
 MAX_MISSED_HEARTBEATS = 3
 
+FRAGMENT_SIZE = 1500
 class Peer2peer:
     def __init__(self, client_ip, client_port, target_ip, target_port, msgsize):
         self.client_ip = client_ip
@@ -27,6 +28,11 @@ class Peer2peer:
         self.last_heartbeat_time = None
         self.last_received_msg_time = time.time()
         self.ack_nack_packet = None
+        self.crc_success = True
+
+    def crc16(self, data):
+        crc16_func = crcmod.predefined.mkPredefinedCrcFun('xmodem')
+        return crc16_func(data)
 
     def merge_bits(self, sequence_number, acknowledgment_number, fragment_id, flags, msg_type, checksum):
         #Merge individual bit fields into a single bit sequence."""
@@ -140,7 +146,6 @@ class Peer2peer:
         """Listen for incoming heartbeat messages and respond."""
         self.missed_heartbeats = 0
         if ack_flag:
-
             return
 
         # Reset missed heartbeats counter when a heartbeat is received
@@ -159,7 +164,7 @@ class Peer2peer:
         flags = 8
         ack_packet = self.create_new_bit_field(self.sequence_number_int, 0, 0, flags, 2, 0)
         self.sock.sendto(ack_packet, addr)
-        print('ACK sent')
+        #print('ACK sent')
 
 
     def send_nack(self, addr):
@@ -167,7 +172,7 @@ class Peer2peer:
         flags = 0  # No ACK flag
         nack_packet = self.create_new_bit_field(self.sequence_number_int, 0, 0, flags, 2, 0)
         self.sock.sendto(nack_packet, addr)
-        print('NACK sent')
+        #print('NACK sent')
 
 
     def wait_for_ack_nack(self):
@@ -208,8 +213,11 @@ class Peer2peer:
                 else:
                     print("Message sent.")
 
+
+                crc = self.crc16(message.encode('utf-8'))
+
                 self.sequence_number_int += 1
-                packet = self.create_new_bit_field(self.sequence_number_int, 0,0, 4, 2, 0)
+                packet = self.create_new_bit_field(self.sequence_number_int, 0,0, 4, 2, crc)
                 self.sock.sendto(packet + message.encode('utf-8'), (self.target_ip, self.target_port))
 
             elif choice == 'f':
@@ -235,6 +243,7 @@ class Peer2peer:
 
                 # Parse message type and flags from header
                 msg_type_bits = int(bit_message[85:88], 2)
+                crc_control = int(bit_message[88:], 2)
 
                 if msg_type_bits == 111:
                     # End of connection
@@ -266,11 +275,16 @@ class Peer2peer:
 
                     # Assume it's a text message if msg_type is not file
                     data = data[13:]  # Strip header bits
+                    crc = self.crc16(data)
                     received_text = data.decode('utf-8')
+
 
                     # Move cursor to the beginning of the line, clear it, then print the received message
                     sys.stdout.write(f"\r{' ' * 80}\r")  # Clear the current line
-                    sys.stdout.write(f"Received from {addr}: {received_text}\n")
+                    if crc == crc_control:
+                        sys.stdout.write(f"Received from {addr} (crc success): {received_text}\n")
+                    else:
+                        sys.stdout.write(f"Received from {addr} (crc failure): {received_text}\n")
                     sys.stdout.flush()
 
                     # Show the input prompt again on the next line
@@ -300,6 +314,7 @@ class Peer2peer:
                     else:
                         flags = 2  # More fragments
 
+                    crc = self.crc16(file_data)
                     # Create the packet with headers and file data
                     packet = self.create_new_bit_field(
                         sequence_number=self.sequence_number_int,
@@ -307,7 +322,7 @@ class Peer2peer:
                         fragment_id=fragment_id,
                         flags=flags,
                         msg_type=4,  # File message type
-                        checksum=0
+                        checksum=crc
                     )
                     packet += file_data
 
@@ -323,7 +338,7 @@ class Peer2peer:
 
                         # Handle ACK/NACK based on received flags
                         if flags == 8:
-                            print(f"ACK received for fragment {fragment_id}")
+                            #print(f"ACK received for fragment {fragment_id}")
                             break  # Break the retry loop if ACK is received
                         elif flags == 0:
                             print(f"NACK received for fragment {fragment_id}, retransmitting...")
@@ -366,10 +381,22 @@ class Peer2peer:
 
                 fragment_id = int(bit_message[64:80], 2)
 
+                crc_control = int(bit_message[88:], 2)  # crc checksum
                 # Save fragment data (after header) in the correct order
                 fragments[fragment_id] = data[13:]
-                print(f"fragment number {fragment_id} -- flags {flags}")
+
+
+                crc = self.crc16(fragments[fragment_id])
+
+                if crc == crc_control:
+                    print(f"fragment number {fragment_id} -- flags {flags} -- crc succesfull")
+
+                else:
+                    print(f"fragment number {fragment_id} -- flags {flags} -- error crc not succesfull")
+                    self.crc_success = False
+
                 self.send_ack(addr)
+
                 # If this is the last fragment (no more fragments flag), break out of loop
                 if flags == 4 :
                     break
@@ -392,13 +419,16 @@ class Peer2peer:
 
         # Define the downloads folder path and file name
         download_path = "C:/Users/001ba/Downloads"  # Using expanduser to resolve paths
-        file_path = os.path.join(download_path, "received_file")
+        file_path = os.path.join(download_path, "new_file")
 
         # Save the reconstructed file data
         try:
             with open(file_path, 'wb') as f:
                 f.write(file_data)
-            print(f"File received and saved as '{file_path}' ")
+            if self.crc_success:
+                print(f"File received and saved as '{file_path}' ")
+            elif not self.crc_success:
+                print(f"File received and saved as '{file_path}' with error crc not succesful")
             sys.stdout.write("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ")
             sys.stdout.flush()
 
@@ -472,6 +502,6 @@ if __name__ == "__main__":
     target_ip =  '10.10.18.243'
     target_port = input("target port:")  # 55555 for exapmle
 
-    node = Peer2peer(local_ip, int(local_port), target_ip, int(target_port), 1024)
+    node = Peer2peer(local_ip, int(local_port), target_ip, int(target_port), FRAGMENT_SIZE)
     while node.running:
         node.start_communication()
