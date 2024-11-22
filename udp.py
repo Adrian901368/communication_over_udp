@@ -29,6 +29,8 @@ class Peer2peer:
         self.last_received_msg_time = time.time()
         self.ack_nack_packet = None
         self.crc_success = True
+        self.fragment_size = FRAGMENT_SIZE
+        self.file_size = 0
 
     def crc16(self, data):
         crc16_func = crcmod.predefined.mkPredefinedCrcFun('xmodem')
@@ -294,6 +296,13 @@ class Peer2peer:
                 pass
 
     def send_file(self, file_path):
+        set_size = input("Do you want size of fragment 1500 bytes? press 'N' for different or 'Enter' for 1500: ")
+        if set_size == 'N':
+            number = input('new size of fragment: ')
+            self.msgsize = int(number)
+            self.fragment_size = int(number)
+        else:
+            print("Setting default size 1500 bytes")
         """Send a file in fragments if needed."""
         try:
 
@@ -310,7 +319,8 @@ class Peer2peer:
 
                     # Set flags based on whether this is the last fragment
                     if len(file_data) < (self.msgsize - 13):
-                        flags = 4  # Last fragment
+                        flags = 4
+                        last_fragment_size = len(file_data)# Last fragment
                     else:
                         flags = 2  # More fragments
 
@@ -356,7 +366,9 @@ class Peer2peer:
                     fragment_id += 1
                     self.sequence_number_int += 1
 
-            print("File sent successfully.")
+            self.file_size = os.path.getsize(file_path)
+            total_frags = (self.file_size + self.fragment_size - 1) // self.fragment_size
+            print(f"File sent successfully by {total_frags} fragments of {self.fragment_size} size and size of last is {last_fragment_size} bytes")
 
 
         except FileNotFoundError:
@@ -369,6 +381,8 @@ class Peer2peer:
         """Receive a file in fragments and reconstruct it."""
         fragments = {}
         fragment_id = 0
+        start_time = time.time()
+
         while self.running and self.connected:
             try:
 
@@ -389,13 +403,15 @@ class Peer2peer:
                 crc = self.crc16(fragments[fragment_id])
 
                 if crc == crc_control:
-                    print(f"fragment number {fragment_id} -- flags {flags} -- crc succesfull")
+                    print(f"fragment number {fragment_id} -- fragment received succesfully")
+                    self.send_ack(addr)
+                    self.crc_success = True
 
                 else:
-                    print(f"fragment number {fragment_id} -- flags {flags} -- error crc not succesfull")
+                    print(f"fragment number {fragment_id} -- error crc not succesfull")
                     self.crc_success = False
+                    self.send_nack(addr)
 
-                self.send_ack(addr)
 
                 # If this is the last fragment (no more fragments flag), break out of loop
                 if flags == 4 :
@@ -415,6 +431,8 @@ class Peer2peer:
                 self.send_nack(addr)
 
         # Reconstruct the file from fragments
+        end_time = time.time()
+        elapsed_time = end_time - start_time
         file_data = b''.join([fragments[i] for i in sorted(fragments)])
 
         # Define the downloads folder path and file name
@@ -426,7 +444,7 @@ class Peer2peer:
             with open(file_path, 'wb') as f:
                 f.write(file_data)
             if self.crc_success:
-                print(f"File received and saved as '{file_path}' ")
+                print(f"File received and saved as '{file_path}' with size {len(file_data)} bytes in time {elapsed_time:.2f} seconds")
             elif not self.crc_success:
                 print(f"File received and saved as '{file_path}' with error crc not succesful")
             sys.stdout.write("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ")
@@ -497,9 +515,9 @@ class Peer2peer:
 
 
 if __name__ == "__main__":
-    local_ip =  '10.10.18.243'
+    local_ip = '169.254.55.133'#'169.254.55.133'#'172.20.10.4' #'127.0.0.1'#'10.10.18.243'
     local_port = input("local port:")  # 55554 for example
-    target_ip =  '10.10.18.243'
+    target_ip = '169.254.190.20'#'169.254.190.20'#'172.20.10.4' #'127.0.0.1'#'10.10.18.243'
     target_port = input("target port:")  # 55555 for exapmle
 
     node = Peer2peer(local_ip, int(local_port), target_ip, int(target_port), FRAGMENT_SIZE)
