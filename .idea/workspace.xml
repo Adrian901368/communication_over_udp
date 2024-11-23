@@ -4,8 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="bf2e1fbe-0ce0-4e50-9383-99a73ccb9cfd" name="Changes" comment="all working 2 minutes cca">
-      <change beforePath="$PROJECT_DIR$/.idea/udp_barnak.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/udp_barnak.iml" afterDir="false" />
+    <list default="true" id="bf2e1fbe-0ce0-4e50-9383-99a73ccb9cfd" name="Changes" comment="almost done program">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/udp.py" beforeDir="false" afterPath="$PROJECT_DIR$/udp.py" afterDir="false" />
     </list>
@@ -174,8 +173,35 @@
       <option name="project" value="LOCAL" />
       <updated>1731526274084</updated>
     </task>
-    <option name="localTasksCounter" value="13" />
+    <task id="LOCAL-00013" summary="almost done program">
+      <option name="closed" value="true" />
+      <created>1732306060674</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1732306060674</updated>
+    </task>
+    <task id="LOCAL-00014" summary="almost done program">
+      <option name="closed" value="true" />
+      <created>1732306069481</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1732306069481</updated>
+    </task>
+    <option name="localTasksCounter" value="15" />
     <servers />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Handshake + communication" />
@@ -184,7 +210,8 @@
     <MESSAGE value="Files ale sending succesfully by all fragments + keep alive" />
     <MESSAGE value="all except crc" />
     <MESSAGE value="all working 2 minutes cca" />
-    <option name="LAST_COMMIT_MESSAGE" value="all working 2 minutes cca" />
+    <MESSAGE value="almost done program" />
+    <option name="LAST_COMMIT_MESSAGE" value="almost done program" />
   </component>
   <component name="XDebuggerManager">
     <watches-manager>

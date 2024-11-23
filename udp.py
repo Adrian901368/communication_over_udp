@@ -31,6 +31,7 @@ class Peer2peer:
         self.crc_success = True
         self.fragment_size = FRAGMENT_SIZE
         self.file_size = 0
+        self.quit_received = False
 
     def crc16(self, data):
         crc16_func = crcmod.predefined.mkPredefinedCrcFun('xmodem')
@@ -128,6 +129,8 @@ class Peer2peer:
                 print("Connection lost.\nCLOSING...")
                 self.keep_alive_running = False
                 self.connected = False
+                self.running = False
+                self.sock.close()
                 break
 
             # Odoslanie heartbeat správy
@@ -228,10 +231,13 @@ class Peer2peer:
 
             elif choice == 'quit':
                 self.running = False
+                self.connected = False
+                self.keep_alive_running = False
                 self.sequence_number_int += 1
                 packet = self.create_new_bit_field(self.sequence_number_int, 0, 0,4, 7, 0)
                 self.sock.sendto(packet, (self.target_ip, self.target_port))
-                break
+                self.quit_received = True
+                sys.exit(0)
 
             else:
                 print("Invalid input. Please enter 'M', 'F', or 'Quit'.")
@@ -250,6 +256,8 @@ class Peer2peer:
                 if msg_type_bits == 111:
                     # End of connection
                     self.connected = False
+                    self.running = False
+                    self.sock.close()
                     break
 
                 if msg_type_bits == 4:  # File message type
@@ -395,7 +403,7 @@ class Peer2peer:
 
                 fragment_id = int(bit_message[64:80], 2)
 
-                crc_control = int(bit_message[88:], 2)  # crc checksum
+                crc_control = int(bit_message[88:], 2) # crc checksum
                 # Save fragment data (after header) in the correct order
                 fragments[fragment_id] = data[13:]
 
@@ -446,7 +454,7 @@ class Peer2peer:
             if self.crc_success:
                 print(f"File received and saved as '{file_path}' with size {len(file_data)} bytes in time {elapsed_time:.2f} seconds")
             elif not self.crc_success:
-                print(f"File received and saved as '{file_path}' with error crc not succesful")
+                print(f"Error receiving file '{file_path}' with error crc not succesful")
             sys.stdout.write("Enter 'M' to send a message, 'F' to send a file, or 'Quit' to end connection: ")
             sys.stdout.flush()
 
@@ -472,7 +480,7 @@ class Peer2peer:
     def start_communication(self):
         # Initiate the handshake
         handshake_thread = threading.Thread(target=self.receive_handshake)
-        handshake_thread.daemon = True
+        #handshake_thread.daemon = True
         handshake_thread.start()
 
 
@@ -490,36 +498,47 @@ class Peer2peer:
 
         # Start sending and receiving messages after cquionnection is established
         receive_thread = threading.Thread(target=self.receive_message)
-        receive_thread.daemon = True
+        #receive_thread.daemon = True
         receive_thread.start()
 
         send_thread = threading.Thread(target=self.send_message)
-        send_thread.daemon = True
+        #send_thread.daemon = True
         send_thread.start()
 
         keep_alive_send_thread = threading.Thread(target=self.send_keep_alive)
-        keep_alive_send_thread.daemon = True
+        #keep_alive_send_thread.daemon = True
         keep_alive_send_thread.start()
 
         try:
-
             while self.running and self.connected:
-                pass
+                if not self.connected or self.quit_received:
+                    print("Connection terminated.")
+                    sys.exit(0)
+                time.sleep(0.1)  # Add small sleep to prevent CPU overuse
         except KeyboardInterrupt:
             print("Shutting down...")
         finally:
-            if self.running:
-                return
             print("CLOSING...")
+            self.running = False
+            self.connected = False
+            self.keep_alive_running = False
+            # Terminate all threads
+            for thread in threading.enumerate():
+                if thread != threading.main_thread():
+                    thread.join(timeout=1)
             self.sock.close()
+            sys.exit(0)
 
 
 if __name__ == "__main__":
-    local_ip = '169.254.55.133'#'169.254.55.133'#'172.20.10.4' #'127.0.0.1'#'10.10.18.243'
+    local_ip = '10.10.18.243'#'169.254.55.133'#'172.20.10.4' #'127.0.0.1'#'10.10.18.243'
     local_port = input("local port:")  # 55554 for example
-    target_ip = '169.254.190.20'#'169.254.190.20'#'172.20.10.4' #'127.0.0.1'#'10.10.18.243'
+    target_ip = '10.10.18.243'#'169.254.190.20'#'172.20.10.4' #'127.0.0.1'#'10.10.18.243'
     target_port = input("target port:")  # 55555 for exapmle
 
     node = Peer2peer(local_ip, int(local_port), target_ip, int(target_port), FRAGMENT_SIZE)
     while node.running:
-        node.start_communication()
+        try:
+            node.start_communication()
+        except SystemExit:
+            sys.exit(0)
